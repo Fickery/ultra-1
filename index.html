@@ -12,7 +12,7 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: #ffffff;
+      background: transparent;
       font-family: "Konkret Grotesk Pro", Inter, Helvetica, Arial, sans-serif;
     }
 
@@ -21,7 +21,7 @@
       width: 100vw;
       height: 100vh;
       overflow: hidden;
-      background: #ffffff;
+      background: transparent;
     }
 
     canvas {
@@ -52,9 +52,9 @@
     return;
   }
 
-  const PARAGRAPHS = [
-    'Ne Plus Ultra is a Latin phrase meaning “nothing further beyond.” It was historically used to describe a final limit, the furthest point that could be reached or imagined. The phrase suggests completion, perfection, and a boundary that cannot be crossed. However, its meaning becomes more interesting when we consider how often humans have moved beyond the limits once placed before them. What was once seen as impossible eventually becomes possible. The edge of the map becomes a new route, the highest peak becomes another climb, and the unknown becomes something to question, explore, and challenge. Ne Plus Ultra therefore represents both an ending and a beginning. It marks the point where something appears complete, but it also invites us to ask whether that limit is truly final. What seems like the end may simply be the edge of what we currently understand.'
-  ];
+  const LEFT_TEXT = 'Ne Plus Ultra is a Latin phrase meaning “nothing further beyond.” It was historically used to describe a final limit, the furthest point that could be reached or imagined. The phrase suggests completion, perfection, and a boundary that cannot be crossed. However, its meaning becomes more interesting when we consider how often humans have moved beyond the limits once placed before them. What was once seen as impossible eventually becomes possible.';
+
+  const RIGHT_TEXT = 'The edge of the map becomes a new route, the highest peak becomes another climb, and the unknown becomes something to question, explore, and challenge. Ne Plus Ultra therefore represents both an ending and a beginning. It marks the point where something appears complete, but it also invites us to ask whether that limit is truly final. What seems like the end may simply be the edge of what we currently understand.';
 
   // Requested hover scaling.
   const HOVER_SCALE_X = 1.10;
@@ -64,8 +64,10 @@
   const FALLOFF_RADIUS = 0.115;
   const BASE_OPACITY = 0.28;
   const DARK_OPACITY = 0.96;
-  const BODY_WEIGHT = 500;
+  const BODY_WEIGHT = 450;
   const TITLE_WEIGHT = 700;
+  const COLUMN_GAP_RATIO = 0.18;
+  const SIDE_PAD_RATIO = 0.07;
 
   const vertexSource = `
     attribute vec2 aPosition;
@@ -181,21 +183,28 @@
     return lines;
   }
 
-  function measureLayout(ctx, bodySize, maxWidth) {
+  function measureLayout(ctx, bodySize, columnWidth) {
     const bodyLineHeight = bodySize * 1.24;
     const paragraphGap = bodySize * 0.56;
 
-    let totalHeight = 0;
-
     ctx.font = `${BODY_WEIGHT} ${bodySize}px Konkret Grotesk Pro, Inter, Helvetica, Arial, sans-serif`;
-    const paragraphLines = PARAGRAPHS.map(paragraph => wrapText(ctx, paragraph, maxWidth));
 
-    paragraphLines.forEach((lines, index) => {
-      totalHeight += lines.length * bodyLineHeight;
-      if (index < paragraphLines.length - 1) totalHeight += paragraphGap;
-    });
+    const leftLines = wrapText(ctx, LEFT_TEXT, columnWidth);
+    const rightLines = wrapText(ctx, RIGHT_TEXT, columnWidth);
 
-    return { totalHeight, paragraphLines, bodyLineHeight, paragraphGap };
+    const leftHeight = leftLines.length * bodyLineHeight;
+    const rightHeight = rightLines.length * bodyLineHeight;
+    const totalHeight = Math.max(leftHeight, rightHeight);
+
+    return {
+      leftLines,
+      rightLines,
+      bodyLineHeight,
+      paragraphGap,
+      leftHeight,
+      rightHeight,
+      totalHeight
+    };
   }
 
   function drawTextTexture() {
@@ -216,22 +225,24 @@
     textCtx.textAlign = 'center';
     textCtx.textBaseline = 'middle';
 
-    const maxWidth = Math.min(w * 0.80, 1320 * dpr);
-    const topPad = h * 0.06;
-    const bottomPad = h * 0.06;
+    const sidePad = w * SIDE_PAD_RATIO;
+    const topPad = h * 0.10;
+    const bottomPad = h * 0.10;
+    const columnGap = w * COLUMN_GAP_RATIO;
     const availableHeight = h - topPad - bottomPad;
+    const columnWidth = Math.min((w - sidePad * 2.0 - columnGap) * 0.5, 500 * dpr);
 
-    const minBody = 14 * dpr;
-    const maxBody = 40 * dpr;
+    const minBody = 12 * dpr;
+    const maxBody = 36 * dpr;
 
     let low = minBody;
     let high = maxBody;
-    let layout = measureLayout(textCtx, minBody, maxWidth);
+    let layout = measureLayout(textCtx, minBody, columnWidth);
     let bodySize = minBody;
 
     for (let i = 0; i < 22; i++) {
       const mid = (low + high) / 2;
-      const test = measureLayout(textCtx, mid, maxWidth);
+      const test = measureLayout(textCtx, mid, columnWidth);
       if (test.totalHeight <= availableHeight) {
         low = mid;
         layout = test;
@@ -241,19 +252,26 @@
       }
     }
 
-    // Vertically center the full text block with normal spacing.
-    let y = Math.max(topPad, (h - layout.totalHeight) * 0.5);
+    const leftX = sidePad;
+    const rightX = w - sidePad - columnWidth;
+    const startYLeft = Math.max(topPad, (h - layout.leftHeight) * 0.5);
+    const startYRight = Math.max(topPad, (h - layout.rightHeight) * 0.5);
 
     textCtx.font = `${BODY_WEIGHT} ${bodySize}px Konkret Grotesk Pro, Inter, Helvetica, Arial, sans-serif`;
-    layout.paragraphLines.forEach((lines, paragraphIndex) => {
-      lines.forEach(line => {
-        y += layout.bodyLineHeight * 0.5;
-        textCtx.fillText(line, w * 0.5, y);
-        y += layout.bodyLineHeight * 0.5;
-      });
-      if (paragraphIndex < layout.paragraphLines.length - 1) {
-        y += layout.paragraphGap;
-      }
+    textCtx.textAlign = 'left';
+
+    let yLeft = startYLeft;
+    layout.leftLines.forEach(line => {
+      yLeft += layout.bodyLineHeight * 0.5;
+      textCtx.fillText(line, leftX, yLeft);
+      yLeft += layout.bodyLineHeight * 0.5;
+    });
+
+    let yRight = startYRight;
+    layout.rightLines.forEach(line => {
+      yRight += layout.bodyLineHeight * 0.5;
+      textCtx.fillText(line, rightX, yRight);
+      yRight += layout.bodyLineHeight * 0.5;
     });
 
     gl.bindTexture(gl.TEXTURE_2D, textTexture);
@@ -285,7 +303,7 @@
     mouse.y += (targetMouse.y - mouse.y) * 0.18;
     hover += (targetHover - hover) * 0.12;
 
-    gl.clearColor(1, 1, 1, 1);
+    gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
